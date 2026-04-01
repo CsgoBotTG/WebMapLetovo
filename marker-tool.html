@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Расстановка меток — инструмент</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      font-size: 14px;
+      color: #1e293b;
+      background: #f1f5f9;
+      padding: 12px;
+      max-width: 1100px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    h1 { font-size: 1.1rem; margin: 0 0 8px; }
+    .hint { color: #64748b; font-size: 0.85rem; margin-bottom: 12px; }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+    .panel {
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .map-box {
+      position: relative;
+      display: inline-block;
+      max-width: 100%;
+      line-height: 0;
+      border: 2px solid #94a3b8;
+      cursor: crosshair;
+      background: #e2e8f0;
+    }
+    .map-box img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      vertical-align: top;
+    }
+    .dot {
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      margin-left: -7px;
+      margin-top: -7px;
+      border-radius: 50%;
+      background: #2563eb;
+      border: 2px solid #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,.4);
+      pointer-events: none;
+    }
+    label { display: block; margin-bottom: 4px; font-weight: 600; }
+    input[type="text"], input[type="number"], textarea, select {
+      width: 100%;
+      max-width: 320px;
+      padding: 6px 8px;
+      border: 1px solid #94a3b8;
+      border-radius: 4px;
+      font: inherit;
+    }
+    textarea { min-height: 56px; resize: vertical; }
+    .field { margin-bottom: 10px; }
+    button {
+      padding: 8px 14px;
+      font: inherit;
+      cursor: pointer;
+      border-radius: 4px;
+      border: 1px solid #64748b;
+      background: #fff;
+    }
+    button.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+    button.danger { border-color: #b91c1c; color: #b91c1c; }
+    #out {
+      width: 100%;
+      min-height: 140px;
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+    }
+    .list-item {
+      padding: 8px;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .list-item:last-child { border-bottom: none; }
+    .err { color: #b91c1c; font-size: 0.85rem; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Инструмент: метки на планах этажей</h1>
+  <p class="hint">Откройте через тот же локальный сервер, что и основной сайт (не как файл с диска). Клик по плану задаёт координаты для <code>places.json</code> — в тех же пикселях, что и карта.</p>
+
+  <div class="row">
+    <div class="panel">
+      <div class="field">
+        <label for="floor">Этаж</label>
+        <select id="floor">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="pid">id точки</label>
+        <input type="text" id="pid" placeholder="например i4" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="title">Название</label>
+        <input type="text" id="title" placeholder="Кабинет 101" />
+      </div>
+      <div class="field">
+        <label for="plabel">Короткая подпись у маркера (необязательно, поле label)</label>
+        <input type="text" id="plabel" placeholder="322, WC, Вход…" maxlength="32" />
+      </div>
+      <div class="field">
+        <label for="text">Текст (подсказка на карте)</label>
+        <textarea id="text" placeholder="Описание при клике на маркер"></textarea>
+      </div>
+      <div class="field">
+        <label for="mcolor">Цвет маркера (необязательно, #rrggbb)</label>
+        <input type="text" id="mcolor" placeholder="#2563eb" />
+      </div>
+      <div class="field">
+        <label>Координаты (клик по картинке)</label>
+        <input type="number" id="cx" readonly placeholder="x" />
+        <input type="number" id="cy" readonly placeholder="y" style="margin-top:6px;" />
+      </div>
+      <button type="button" class="primary" id="btnAdd">Добавить в список</button>
+      <p class="hint" style="margin-top:10px;">Повторный клик обновляет x/y до нажатия «Добавить».</p>
+    </div>
+
+    <div class="panel" style="flex:1; min-width:280px;">
+      <div id="imgErr" class="err" hidden></div>
+      <div class="map-box" id="mapBox" title="Клик — координаты">
+        <img id="floorImg" alt="План этажа" />
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:12px;">
+    <strong>Собранные точки</strong>
+    <div id="list"></div>
+    <div class="field" style="margin-top:12px;">
+      <label for="out">JSON для вставки в <code>places.json</code> → <code>inside.points</code></label>
+      <textarea id="out" readonly></textarea>
+    </div>
+    <button type="button" id="btnCopy">Копировать JSON</button>
+    <button type="button" id="btnClear">Очистить список</button>
+  </div>
+
+  <script>
+(function () {
+  var points = [];
+  var nextId = 1;
+
+  var floorSel = document.getElementById("floor");
+  var floorImg = document.getElementById("floorImg");
+  var mapBox = document.getElementById("mapBox");
+  var imgErr = document.getElementById("imgErr");
+  var cx = document.getElementById("cx");
+  var cy = document.getElementById("cy");
+  var pid = document.getElementById("pid");
+  var title = document.getElementById("title");
+  var plabel = document.getElementById("plabel");
+  var text = document.getElementById("text");
+  var mcolor = document.getElementById("mcolor");
+  var out = document.getElementById("out");
+  var listEl = document.getElementById("list");
+
+  function floorPath(f) {
+    return "images/floor" + f + ".png";
+  }
+
+  function loadFloorImage() {
+    imgErr.hidden = true;
+    imgErr.textContent = "";
+    var f = floorSel.value;
+    floorImg.onload = function () {
+      imgErr.hidden = true;
+      redrawDots();
+    };
+    floorImg.onerror = function () {
+      imgErr.hidden = false;
+      imgErr.textContent =
+        "Не удалось загрузить " +
+        floorPath(f) +
+        ". Запустите страницу через локальный сервер (как index.html).";
+    };
+    floorImg.src = floorPath(f) + "?v=" + Date.now();
+  }
+
+  function imageCoordsFromEvent(e) {
+    var rect = floorImg.getBoundingClientRect();
+    var nw = floorImg.naturalWidth;
+    var nh = floorImg.naturalHeight;
+    if (!nw || !nh) {
+      return null;
+    }
+    var rx = (e.clientX - rect.left) / rect.width;
+    var ry = (e.clientY - rect.top) / rect.height;
+    if (rx < 0 || rx > 1 || ry < 0 || ry > 1) {
+      return null;
+    }
+    return {
+      x: Math.round(rx * nw),
+      y: Math.round(ry * nh),
+    };
+  }
+
+  floorImg.addEventListener("click", function (e) {
+    var c = imageCoordsFromEvent(e);
+    if (c) {
+      cx.value = c.x;
+      cy.value = c.y;
+    }
+  });
+
+  function redrawDots() {
+    var old = mapBox.querySelectorAll(".dot");
+    var i;
+    for (i = 0; i < old.length; i += 1) {
+      old[i].remove();
+    }
+    var nw = floorImg.naturalWidth;
+    var nh = floorImg.naturalHeight;
+    if (!nw || !nh) {
+      return;
+    }
+    var f = parseInt(floorSel.value, 10);
+    points.forEach(function (p) {
+      if (p.floor !== f) {
+        return;
+      }
+      var d = document.createElement("div");
+      d.className = "dot";
+      d.style.left = (p.x / nw) * 100 + "%";
+      d.style.top = (p.y / nh) * 100 + "%";
+      d.title = p.title || p.id;
+      mapBox.appendChild(d);
+    });
+  }
+
+  window.addEventListener("resize", redrawDots);
+  floorImg.addEventListener("load", redrawDots);
+
+  function suggestId() {
+    return "i" + nextId++;
+  }
+
+  function renderList() {
+    listEl.innerHTML = "";
+    if (points.length === 0) {
+      listEl.innerHTML = '<p class="hint">Пока пусто.</p>';
+    } else {
+      points.forEach(function (p, idx) {
+        var row = document.createElement("div");
+        row.className = "list-item";
+        row.innerHTML =
+          "<span><strong>" +
+          (p.id || "?") +
+          "</strong> · этаж " +
+          p.floor +
+          " · " +
+          (p.title || "") +
+          (p.label ? " [" + p.label + "]" : "") +
+          " (" +
+          p.x +
+          ", " +
+          p.y +
+          ")</span>";
+        var del = document.createElement("button");
+        del.type = "button";
+        del.className = "danger";
+        del.textContent = "Удалить";
+        del.onclick = function () {
+          points.splice(idx, 1);
+          renderList();
+          redrawDots();
+        };
+        row.appendChild(del);
+        listEl.appendChild(row);
+      });
+    }
+    updateOut();
+  }
+
+  function pointToJson(p) {
+    var o = {
+      id: p.id,
+      title: p.title,
+      text: p.text,
+      floor: p.floor,
+      y: p.y,
+      x: p.x,
+    };
+    if (p.marker && p.marker.color) {
+      o.marker = { color: p.marker.color };
+    }
+    if (p.label && String(p.label).trim()) {
+      o.label = String(p.label).trim();
+    }
+    return o;
+  }
+
+  function updateOut() {
+    out.value =
+      points.length === 0 ? "" : JSON.stringify(points.map(pointToJson), null, 2);
+  }
+
+  document.getElementById("btnAdd").addEventListener("click", function () {
+    var x = parseInt(cx.value, 10);
+    var y = parseInt(cy.value, 10);
+    if (isNaN(x) || isNaN(y)) {
+      alert("Сначала кликните по плану этажа.");
+      return;
+    }
+    var idVal = (pid.value || "").trim();
+    if (!idVal) {
+      idVal = suggestId();
+      pid.value = idVal;
+    }
+    var p = {
+      id: idVal,
+      title: (title.value || "").trim(),
+      text: (text.value || "").trim(),
+      floor: parseInt(floorSel.value, 10),
+      x: x,
+      y: y,
+    };
+    var lab = (plabel.value || "").trim();
+    if (lab) {
+      p.label = lab;
+    }
+    var col = (mcolor.value || "").trim();
+    if (/^#[0-9A-Fa-f]{3}$/.test(col) || /^#[0-9A-Fa-f]{6}$/.test(col)) {
+      p.marker = { color: col };
+    }
+    points.push(p);
+    if (/^i\d+$/.test(idVal)) {
+      var n = parseInt(idVal.slice(1), 10);
+      if (!isNaN(n) && n >= nextId) {
+        nextId = n + 1;
+      }
+    }
+    renderList();
+    redrawDots();
+  });
+
+  document.getElementById("btnCopy").addEventListener("click", function () {
+    out.select();
+    document.execCommand("copy");
+  });
+
+  document.getElementById("btnClear").addEventListener("click", function () {
+    if (points.length && !confirm("Очистить все точки?")) {
+      return;
+    }
+    points = [];
+    renderList();
+    redrawDots();
+  });
+
+  floorSel.addEventListener("change", function () {
+    loadFloorImage();
+    redrawDots();
+  });
+
+  loadFloorImage();
+  renderList();
+})();
+  </script>
+</body>
+</html>

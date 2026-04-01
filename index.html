@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Карта школы — демо</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@700;800&display=swap" rel="stylesheet">
+  <!-- Без integrity: иначе при расхождении хеша с CDN браузер блокирует Leaflet (карта пустая) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="style.css?v=20260331-8">
+</head>
+<body>
+  <section id="app" class="screen">
+    <div class="map-wrap">
+      <div id="searchPanel" class="search-panel" hidden>
+        <div class="search-panel-row">
+          <input type="search" id="searchInput" class="search-input" placeholder="Название места…" autocomplete="off" enterkeyhint="search" aria-label="Поиск по местам" />
+          <button type="button" id="searchClose" class="search-close" aria-label="Закрыть поиск">×</button>
+        </div>
+        <ul id="searchResults" class="search-results" hidden></ul>
+      </div>
+
+      <div class="floor-controls" id="floorControls" role="toolbar" aria-label="Выбор этажа" hidden>
+        <button type="button" class="control-btn floor-btn is-active" id="btnFloor1" aria-pressed="true" title="Этаж 1">1</button>
+        <button type="button" class="control-btn floor-btn" id="btnFloor2" aria-pressed="false" title="Этаж 2">2</button>
+        <button type="button" class="control-btn floor-btn" id="btnFloor3" aria-pressed="false" title="Этаж 3">3</button>
+        <button type="button" class="control-btn floor-btn" id="btnFloor4" aria-pressed="false" title="Этаж 4">4</button>
+      </div>
+
+      <div class="map-controls" role="toolbar" aria-label="Переключение режима карты">
+        <button type="button" class="control-btn mode-btn is-active" id="btnStreet" aria-pressed="true" aria-label="Показать улицу" title="Улица">Улица</button>
+        <button type="button" class="control-btn mode-btn" id="btnInside" aria-pressed="false" aria-label="Показать внутри" title="Внутри">Внутри</button>
+        <button type="button" class="control-btn" id="btnCenter" aria-label="Вернуть к центру" title="Центр">Центр</button>
+      </div>
+
+      <div id="map" class="map" role="application" aria-label="Карта"></div>
+    </div>
+
+    <aside class="legend">
+      <div class="place-info" id="placeInfo">
+        <p class="place-info-title" id="placeTitle">Улица</p>
+        <p class="place-info-text" id="placeText"></p>
+      </div>
+    </aside>
+  </section>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="main.js?v=20260331-9"></script>
+</body>
+</html>
