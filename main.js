@@ -7,6 +7,20 @@ var currentFloor = 1;
 var currentIndoorBounds = null;
 var searchInputTimer = null;
 
+// Базовый URL каталога сайта (важно для GitHub Pages: /repo/ и для python -m http.server)
+function getAppBaseUrl() {
+  var path = window.location.pathname;
+  var basePath;
+  if (path.endsWith(".html")) {
+    basePath = path.slice(0, path.lastIndexOf("/") + 1);
+  } else if (path.endsWith("/")) {
+    basePath = path;
+  } else {
+    basePath = path + "/";
+  }
+  return window.location.origin + basePath;
+}
+
 // Простая защита от вставки HTML во всплывающих текстах
 function escapeHtml(text) {
   var div = document.createElement("div");
@@ -81,7 +95,7 @@ function resolveUrlMaybeRelative(url) {
     return url;
   }
   try {
-    return new URL(url, window.location.href).href;
+    return new URL(url, getAppBaseUrl()).href;
   } catch (e) {
     return url;
   }
@@ -708,7 +722,7 @@ function openApp() {
 }
 
 function loadData() {
-  var jsonUrl = "places.json?v=" + Date.now();
+  var jsonUrl = getAppBaseUrl() + "places.json?v=" + Date.now();
   return fetch(jsonUrl, { cache: "no-store" })
     .then(function (res) {
       if (!res.ok) {
