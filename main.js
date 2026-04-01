@@ -90,6 +90,35 @@ function streetFallbackImageUrl() {
   return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
 }
 
+/** Предзагрузка планов других этажей в фоне — переключение этажа потом без ожидания сети. */
+function prefetchOtherFloorImages(inside, exceptFloor) {
+  var floorImages = inside.floorImages || {};
+  var keys = Object.keys(floorImages);
+  if (keys.length <= 1) {
+    return;
+  }
+  function run() {
+    keys.forEach(function (k) {
+      if (String(exceptFloor) === k) {
+        return;
+      }
+      var rel = floorImages[k];
+      if (!rel) {
+        return;
+      }
+      var abs = resolveUrlMaybeRelative(rel);
+      var img = new Image();
+      img.decoding = "async";
+      img.src = abs;
+    });
+  }
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(run, { timeout: 2500 });
+  } else {
+    setTimeout(run, 150);
+  }
+}
+
 function resolveUrlMaybeRelative(url) {
   if (!url || url.indexOf("data:") === 0 || /^https?:\/\//i.test(url)) {
     return url;
@@ -414,29 +443,37 @@ function initIndoorMap(onReady) {
   }
 
   if (hasFloorImage) {
+    // Без «cache buster» на каждый заход — иначе браузер каждый раз качает мегабайты PNG заново.
     var resolvedFloorUrl = resolveUrlMaybeRelative(floorImageUrl);
-    var cacheBreaker = resolvedFloorUrl.indexOf("?") >= 0 ? "&" : "?";
-    resolvedFloorUrl = resolvedFloorUrl + cacheBreaker + "v=" + Date.now();
     var probe = new Image();
+    probe.decoding = "async";
     probe.onload = function () {
-      // Для CRS.Simple корректнее использовать реальные размеры изображения.
-      var imgBounds = [
-        [0, 0],
-        [probe.naturalHeight, probe.naturalWidth],
-      ];
-      currentIndoorBounds = imgBounds;
-      var floorOverlay = L.imageOverlay(resolvedFloorUrl, imgBounds, {
-        interactive: false,
-        opacity: 1,
-      }).addTo(map);
-      if (floorOverlay.bringToFront) {
-        floorOverlay.bringToFront();
+      function afterDecode() {
+        // Для CRS.Simple корректнее использовать реальные размеры изображения.
+        var imgBounds = [
+          [0, 0],
+          [probe.naturalHeight, probe.naturalWidth],
+        ];
+        currentIndoorBounds = imgBounds;
+        var floorOverlay = L.imageOverlay(resolvedFloorUrl, imgBounds, {
+          interactive: false,
+          opacity: 1,
+        }).addTo(map);
+        if (floorOverlay.bringToFront) {
+          floorOverlay.bringToFront();
+        }
+        map.fitBounds(imgBounds);
+        addIndoorMarkers(probe.naturalHeight);
+        refreshMapSize();
+        showPlaceInfo("Этаж " + currentFloor, "");
+        prefetchOtherFloorImages(inside, currentFloor);
+        fireReady();
       }
-      map.fitBounds(imgBounds);
-      addIndoorMarkers(probe.naturalHeight);
-      refreshMapSize();
-      showPlaceInfo("Этаж " + currentFloor, "");
-      fireReady();
+      if (typeof probe.decode === "function") {
+        probe.decode().then(afterDecode).catch(afterDecode);
+      } else {
+        afterDecode();
+      }
     };
     probe.onerror = function () {
       // Не блокируем интерфейс: оставляем фон и даём понятную подсказку.
@@ -446,6 +483,7 @@ function initIndoorMap(onReady) {
       );
       var nhFallback = bounds[1] && bounds[1][0] ? bounds[1][0] : 1000;
       addIndoorMarkers(nhFallback);
+      prefetchOtherFloorImages(inside, currentFloor);
       fireReady();
     };
     probe.src = resolvedFloorUrl;
@@ -453,6 +491,7 @@ function initIndoorMap(onReady) {
     showPlaceInfo("Этаж " + currentFloor, "");
     var nhNoImg = bounds[1] && bounds[1][0] ? bounds[1][0] : 1000;
     addIndoorMarkers(nhNoImg);
+    prefetchOtherFloorImages(inside, currentFloor);
     fireReady();
   }
 }

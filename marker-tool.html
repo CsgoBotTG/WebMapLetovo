@@ -157,6 +157,19 @@
 
   <script>
 (function () {
+  function getAppBaseUrl() {
+    var path = window.location.pathname;
+    var basePath;
+    if (path.endsWith(".html")) {
+      basePath = path.slice(0, path.lastIndexOf("/") + 1);
+    } else if (path.endsWith("/")) {
+      basePath = path;
+    } else {
+      basePath = path + "/";
+    }
+    return window.location.origin + basePath;
+  }
+
   var points = [];
   var nextId = 1;
 
@@ -175,7 +188,7 @@
   var listEl = document.getElementById("list");
 
   function floorPath(f) {
-    return "images/floor" + f + ".png";
+    return getAppBaseUrl() + "images/floor" + f + ".png";
   }
 
   function loadFloorImage() {
