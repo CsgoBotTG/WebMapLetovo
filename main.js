@@ -6,6 +6,7 @@ var modeAttributionText = "";
 var currentFloor = 3;
 var currentIndoorBounds = null;
 var currentStreetImageSize = null;
+var activeMarker = null;
 var searchInputTimer = null;
 
 // Базовый URL каталога сайта (важно для GitHub Pages: /repo/ и для python -m http.server)
@@ -72,9 +73,26 @@ function setFloorButtons() {
 }
 
 function removeMap() {
+  activeMarker = null;
   if (map) {
     map.remove();
     map = null;
+  }
+}
+
+function setActiveMarker(marker) {
+  if (activeMarker && activeMarker !== marker) {
+    var prevEl = activeMarker.getElement
+      ? activeMarker.getElement()
+      : activeMarker._icon;
+    if (prevEl) {
+      prevEl.classList.remove("is-selected");
+    }
+  }
+  activeMarker = marker;
+  var el = marker && (marker.getElement ? marker.getElement() : marker._icon);
+  if (el) {
+    el.classList.add("is-selected");
   }
 }
 
@@ -267,9 +285,12 @@ function addPlaceMarker(mapInstance, latlng, point, onClick) {
   var marker = L.marker(latlng, opts);
   marker.addTo(mapInstance);
   attachMarkerLabel(marker, point);
-  if (onClick) {
-    marker.on("click", onClick);
-  }
+  marker.on("click", function () {
+    setActiveMarker(marker);
+    if (onClick) {
+      onClick();
+    }
+  });
   return marker;
 }
 
@@ -818,8 +839,17 @@ function focusSearchItem(item) {
     }
     mode = "street";
     setModeButtons();
-    initStreetMap(function () {
+    function settleStreetFocus() {
       panToStreetItem(item);
+      requestAnimationFrame(function () {
+        panToStreetItem(item);
+        setTimeout(function () {
+          panToStreetItem(item);
+        }, 120);
+      });
+    }
+    initStreetMap(function () {
+      settleStreetFocus();
     }, { skipPostFit: true });
     requestAnimationFrame(function () {
       refreshMapSize();
