@@ -336,11 +336,21 @@ function showPlaceInfo(title, text) {
   textEl.textContent = text || "";
 }
 
-function initStreetMap() {
+function initStreetMap(onReady, opts) {
   removeMap();
+  opts = opts || {};
+  var skipPostFit = Boolean(opts.skipPostFit);
   var street = data.street;
   var c = street.center;
   var img = street.imageOverlay;
+  var readyCallback = typeof onReady === "function" ? onReady : null;
+  function fireReady() {
+    if (readyCallback) {
+      var cb = readyCallback;
+      readyCallback = null;
+      cb();
+    }
+  }
   map = L.map("map", { zoomSnap: 0.25, zoomControl: false });
   appendLeafletControls();
   hideLeafletCornerLink();
@@ -370,6 +380,7 @@ function initStreetMap() {
         if (!ll) {
           return;
         }
+        p.__streetLatLng = ll;
         addPlaceMarker(map, ll, p, function () {
           showPlaceInfo(p.title, p.text);
         });
@@ -394,6 +405,7 @@ function initStreetMap() {
       addStreetMarkersByBounds(iw, ih);
       refreshMapSize();
       fitStreet(map, activeBounds);
+      fireReady();
     });
 
     fitStreet(map, activeBounds);
@@ -434,11 +446,15 @@ function initStreetMap() {
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       maxZoom: 19,
     }).addTo(map);
+    fireReady();
   }
 
   // Несколько раз пересчитать размер — после показа скрытого блока это критично
   setTimeout(function () {
     refreshMapSize();
+    if (skipPostFit) {
+      return;
+    }
     if (img && img.bounds && img.bounds.length === 2) {
       fitStreet(map, activeBounds || L.latLngBounds(img.bounds[0], img.bounds[1]));
     } else {
@@ -611,6 +627,7 @@ function buildSearchIndex() {
   (data.street.points || []).forEach(function (p) {
     list.push({
       scope: "street",
+      ref: p,
       title: p.title || "",
       label: p.label || "",
       text: p.text,
@@ -752,6 +769,15 @@ function panToStreetItem(item) {
   }
   var ll = null;
   if (
+    item &&
+    item.ref &&
+    Array.isArray(item.ref.__streetLatLng) &&
+    item.ref.__streetLatLng.length === 2
+  ) {
+    ll = item.ref.__streetLatLng;
+  }
+  if (
+    !ll &&
     typeof item.x === "number" &&
     typeof item.y === "number" &&
     currentStreetImageSize &&
@@ -764,14 +790,15 @@ function panToStreetItem(item) {
       currentStreetImageSize.height,
       currentStreetImageSize.bounds
     );
-  } else if (typeof item.lat === "number" && typeof item.lng === "number") {
+  } else if (!ll && typeof item.lat === "number" && typeof item.lng === "number") {
     ll = [item.lat, item.lng];
   }
   if (!ll) {
     return false;
   }
-  var z = map.getZoom();
-  map.setView(ll, Math.min(Math.max(z, 17), 19));
+  // Для перехода по поиску на улице всегда делаем заметное приближение.
+  var targetZoom = 18.5;
+  map.setView(ll, targetZoom, { animate: false });
   showPlaceInfo(item.title, item.text || "");
   return true;
 }
@@ -781,19 +808,22 @@ function focusSearchItem(item) {
 
   if (item.scope === "street") {
     var needStreet = mode !== "street";
-    if (needStreet) {
-      applyMode("street");
+    if (!needStreet) {
+      if (!panToStreetItem(item)) {
+        setTimeout(function () {
+          panToStreetItem(item);
+        }, 180);
+      }
+      return;
     }
-    setTimeout(
-      function () {
-        if (!panToStreetItem(item)) {
-          setTimeout(function () {
-            panToStreetItem(item);
-          }, 180);
-        }
-      },
-      needStreet ? 150 : 0
-    );
+    mode = "street";
+    setModeButtons();
+    initStreetMap(function () {
+      panToStreetItem(item);
+    }, { skipPostFit: true });
+    requestAnimationFrame(function () {
+      refreshMapSize();
+    });
     return;
   }
 
