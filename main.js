@@ -3,8 +3,9 @@ var data = null;
 var map = null;
 var mode = "street";
 var modeAttributionText = "";
-var currentFloor = 1;
+var currentFloor = 3;
 var currentIndoorBounds = null;
+var currentStreetImageSize = null;
 var searchInputTimer = null;
 
 // Базовый URL каталога сайта (важно для GitHub Pages: /repo/ и для python -m http.server)
@@ -212,6 +213,19 @@ function indoorLatLngFromPixel(yPx, xPx, heightPx) {
   return [h - yPx, xPx];
 }
 
+function streetLatLngFromPixel(yPx, xPx, widthPx, heightPx, bounds) {
+  if (!bounds || widthPx <= 0 || heightPx <= 0) {
+    return null;
+  }
+  var sw = bounds.getSouthWest();
+  var ne = bounds.getNorthEast();
+  var rx = xPx / widthPx;
+  var ry = yPx / heightPx;
+  var lat = ne.lat - ry * (ne.lat - sw.lat);
+  var lng = sw.lng + rx * (ne.lng - sw.lng);
+  return [lat, lng];
+}
+
 function getIndoorPixelHeight() {
   if (
     currentIndoorBounds &&
@@ -263,6 +277,36 @@ function fitStreet(mapInstance, boundsLatLng) {
   mapInstance.fitBounds(boundsLatLng, { padding: [24, 24], maxZoom: 19 });
 }
 
+// Подгоняем гео-границы уличной картинки под её реальное соотношение сторон.
+// Центр и горизонтальный охват оставляем, меняем только высоту bounds.
+function streetBoundsByImageAspect(baseBounds, imageWidth, imageHeight) {
+  if (
+    !baseBounds ||
+    !imageWidth ||
+    !imageHeight ||
+    imageWidth <= 0 ||
+    imageHeight <= 0
+  ) {
+    return baseBounds;
+  }
+  var sw = baseBounds.getSouthWest();
+  var ne = baseBounds.getNorthEast();
+  var latCenter = (sw.lat + ne.lat) / 2;
+  var lngCenter = (sw.lng + ne.lng) / 2;
+  var lngSpan = Math.abs(ne.lng - sw.lng);
+  if (!lngSpan) {
+    return baseBounds;
+  }
+  // Корректировка по широте (долгота "сжимается" как cos(lat)).
+  var cosLat = Math.cos((latCenter * Math.PI) / 180);
+  var safeCos = Math.max(cosLat, 0.01);
+  var targetLatSpan = lngSpan * (imageHeight / imageWidth) * safeCos;
+  return L.latLngBounds(
+    [latCenter - targetLatSpan / 2, lngCenter - lngSpan / 2],
+    [latCenter + targetLatSpan / 2, lngCenter + lngSpan / 2]
+  );
+}
+
 // Убираем стандартную строку «Leaflet» в углу (ссылка на сайт библиотеки и её значок в браузере)
 function hideLeafletCornerLink() {
   if (map && map.attributionControl && map.attributionControl.setPrefix) {
@@ -305,23 +349,54 @@ function initStreetMap() {
 
   if (img && img.url && img.bounds && img.bounds.length === 2) {
     var bounds = L.latLngBounds(img.bounds[0], img.bounds[1]);
-    // Подложка: если картинка не грузится, всё равно видно «территорию», а не пустой серый фон
-    L.rectangle(bounds, {
-      color: "#475569",
-      weight: 2,
-      fillColor: "#94a3b8",
-      fillOpacity: 0.45,
-    }).addTo(map);
+    var activeBounds = bounds;
+    currentStreetImageSize = null;
+
+    function addStreetMarkersByBounds(imgW, imgH) {
+      currentStreetImageSize = { width: imgW, height: imgH, bounds: activeBounds };
+      street.points.forEach(function (p) {
+        var ll = null;
+        if (
+          typeof p.x === "number" &&
+          typeof p.y === "number" &&
+          imgW > 0 &&
+          imgH > 0
+        ) {
+          ll = streetLatLngFromPixel(p.y, p.x, imgW, imgH, activeBounds);
+        } else if (typeof p.lat === "number" && typeof p.lng === "number") {
+          // Обратная совместимость для старых данных.
+          ll = [p.lat, p.lng];
+        }
+        if (!ll) {
+          return;
+        }
+        addPlaceMarker(map, ll, p, function () {
+          showPlaceInfo(p.title, p.text);
+        });
+      });
+    }
 
     var imageUrl = resolveUrlMaybeRelative(img.url);
-    var overlay = L.imageOverlay(imageUrl, bounds, { interactive: false }).addTo(map);
+    var overlay = L.imageOverlay(imageUrl, activeBounds, {
+      interactive: false,
+    }).addTo(map);
 
     overlay.on("load", function () {
+      var el = overlay.getElement && overlay.getElement();
+      var iw = el && el.naturalWidth ? el.naturalWidth : 0;
+      var ih = el && el.naturalHeight ? el.naturalHeight : 0;
+      if (iw > 0 && ih > 0) {
+        activeBounds = streetBoundsByImageAspect(bounds, iw, ih);
+        if (overlay.setBounds) {
+          overlay.setBounds(activeBounds);
+        }
+      }
+      addStreetMarkersByBounds(iw, ih);
       refreshMapSize();
-      fitStreet(map, bounds);
+      fitStreet(map, activeBounds);
     });
 
-    fitStreet(map, bounds);
+    fitStreet(map, activeBounds);
 
     // Если PNG не найден (404) или путь неверный — подменяем на встроенную SVG
     setTimeout(function () {
@@ -344,11 +419,12 @@ function initStreetMap() {
         if (map.hasLayer(overlay)) {
           map.removeLayer(overlay);
         }
-        overlay = L.imageOverlay(streetFallbackImageUrl(), bounds, {
+        overlay = L.imageOverlay(streetFallbackImageUrl(), activeBounds, {
           interactive: false,
         }).addTo(map);
+        addStreetMarkersByBounds(640, 480);
         refreshMapSize();
-        fitStreet(map, bounds);
+        fitStreet(map, activeBounds);
       }
     }, 0);
   } else {
@@ -360,17 +436,11 @@ function initStreetMap() {
     }).addTo(map);
   }
 
-  street.points.forEach(function (p) {
-    addPlaceMarker(map, [p.lat, p.lng], p, function () {
-      showPlaceInfo(p.title, p.text);
-    });
-  });
-
   // Несколько раз пересчитать размер — после показа скрытого блока это критично
   setTimeout(function () {
     refreshMapSize();
     if (img && img.bounds && img.bounds.length === 2) {
-      fitStreet(map, L.latLngBounds(img.bounds[0], img.bounds[1]));
+      fitStreet(map, activeBounds || L.latLngBounds(img.bounds[0], img.bounds[1]));
     } else {
       centerView();
     }
@@ -408,7 +478,9 @@ function initIndoorMap(onReady) {
   setFloorButtons();
   showPlaceInfo("Этаж " + currentFloor, "");
 
-  map.fitBounds(bounds);
+  // Без анимации: иначе последующий setView (телепорт к точке) может быть «перетёрт»
+  // продолжающейся анимацией fitBounds и визуально кажется, что карта отъезжает назад.
+  map.fitBounds(bounds, { animate: false });
 
   var bg = inside.background || { fill: "#dbeafe", stroke: "#93c5fd" };
   var floorImages = inside.floorImages || {};
@@ -462,7 +534,7 @@ function initIndoorMap(onReady) {
         if (floorOverlay.bringToFront) {
           floorOverlay.bringToFront();
         }
-        map.fitBounds(imgBounds);
+        map.fitBounds(imgBounds, { animate: false });
         addIndoorMarkers(probe.naturalHeight);
         refreshMapSize();
         showPlaceInfo("Этаж " + currentFloor, "");
@@ -540,7 +612,10 @@ function buildSearchIndex() {
     list.push({
       scope: "street",
       title: p.title || "",
+      label: p.label || "",
       text: p.text,
+      x: p.x,
+      y: p.y,
       lat: p.lat,
       lng: p.lng,
     });
@@ -552,6 +627,7 @@ function buildSearchIndex() {
     list.push({
       scope: "inside",
       title: p.title || "",
+      label: p.label || "",
       text: p.text,
       x: p.x,
       y: p.y,
@@ -617,13 +693,16 @@ function renderSearchResults(query) {
   }
   var q = query.trim().toLowerCase();
   ul.innerHTML = "";
-  if (q.length <= 3) {
+  // Разрешаем искать по коротким номерам кабинетов (например, "203").
+  if (q.length <= 1) {
     ul.hidden = true;
     return;
   }
   var items = buildSearchIndex();
   var matches = items.filter(function (it) {
-    return (it.title || "").toLowerCase().indexOf(q) === 0;
+    var t = (it.title || "").toLowerCase();
+    var l = (it.label || "").toLowerCase();
+    return t.indexOf(q) !== -1 || l.indexOf(q) !== -1;
   });
   if (matches.length === 0) {
     ul.hidden = true;
@@ -634,7 +713,7 @@ function renderSearchResults(query) {
     var btn = document.createElement("button");
     btn.type = "button";
     btn.className = "search-result-btn";
-    btn.textContent = it.title;
+    btn.textContent = it.title || it.label || "";
     var meta = document.createElement("span");
     meta.className = "search-result-meta";
     meta.textContent =
@@ -657,8 +736,44 @@ function panToInsideItem(item) {
   var x = typeof item.x === "number" ? item.x : 500;
   var nh = getIndoorPixelHeight();
   var ll = indoorLatLngFromPixel(y, x, nh);
-  map.setView(ll, Math.max(map.getZoom(), -0.5));
+  // При переходе на другой этаж карта сначала показывает весь план (fitBounds),
+  // поэтому нужно явно приближать сильнее для результата поиска.
+  var baseZoom =
+    data && data.inside && data.inside.center && typeof data.inside.center.zoom === "number"
+      ? data.inside.center.zoom
+      : 0;
+  map.setView(ll, Math.max(map.getZoom(), baseZoom, 0.5), { animate: false });
   showPlaceInfo(item.title, item.text || "");
+}
+
+function panToStreetItem(item) {
+  if (!map) {
+    return false;
+  }
+  var ll = null;
+  if (
+    typeof item.x === "number" &&
+    typeof item.y === "number" &&
+    currentStreetImageSize &&
+    currentStreetImageSize.bounds
+  ) {
+    ll = streetLatLngFromPixel(
+      item.y,
+      item.x,
+      currentStreetImageSize.width,
+      currentStreetImageSize.height,
+      currentStreetImageSize.bounds
+    );
+  } else if (typeof item.lat === "number" && typeof item.lng === "number") {
+    ll = [item.lat, item.lng];
+  }
+  if (!ll) {
+    return false;
+  }
+  var z = map.getZoom();
+  map.setView(ll, Math.min(Math.max(z, 17), 19));
+  showPlaceInfo(item.title, item.text || "");
+  return true;
 }
 
 function focusSearchItem(item) {
@@ -671,12 +786,11 @@ function focusSearchItem(item) {
     }
     setTimeout(
       function () {
-        if (!map) {
-          return;
+        if (!panToStreetItem(item)) {
+          setTimeout(function () {
+            panToStreetItem(item);
+          }, 180);
         }
-        var z = map.getZoom();
-        map.setView([item.lat, item.lng], Math.min(Math.max(z, 17), 19));
-        showPlaceInfo(item.title, item.text || "");
       },
       needStreet ? 150 : 0
     );
@@ -695,7 +809,10 @@ function focusSearchItem(item) {
     setModeButtons();
   }
   initIndoorMap(function () {
-    panToInsideItem(item);
+    // Сначала показали/загрузили нужный этаж, затем приближаем к точке.
+    requestAnimationFrame(function () {
+      panToInsideItem(item);
+    });
   });
   requestAnimationFrame(function () {
     refreshMapSize();
@@ -743,13 +860,13 @@ function openApp() {
   if (appEl) {
     appEl.hidden = false;
   }
-  mode = "street";
+  mode = "inside";
   setModeButtons();
 
   // Пока блок был с атрибутом hidden, высота карты = 0. Ждём отрисовку, потом создаём карту.
   requestAnimationFrame(function () {
     requestAnimationFrame(function () {
-      initStreetMap();
+      initIndoorMap();
       refreshMapSize();
       centerView();
       setTimeout(function () {

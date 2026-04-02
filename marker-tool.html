@@ -99,6 +99,13 @@
   <div class="row">
     <div class="panel">
       <div class="field">
+        <label for="scope">Режим</label>
+        <select id="scope">
+          <option value="inside">Внутри</option>
+          <option value="street">Улица</option>
+        </select>
+      </div>
+      <div class="field">
         <label for="floor">Этаж</label>
         <select id="floor">
           <option value="1">1</option>
@@ -128,7 +135,7 @@
         <input type="text" id="mcolor" placeholder="#2563eb" />
       </div>
       <div class="field">
-        <label>Координаты (клик по картинке)</label>
+        <label id="coordsLabel">Координаты (клик по картинке)</label>
         <input type="number" id="cx" readonly placeholder="x" />
         <input type="number" id="cy" readonly placeholder="y" style="margin-top:6px;" />
       </div>
@@ -148,10 +155,15 @@
     <strong>Собранные точки</strong>
     <div id="list"></div>
     <div class="field" style="margin-top:12px;">
-      <label for="out">JSON для вставки в <code>places.json</code> → <code>inside.points</code></label>
-      <textarea id="out" readonly></textarea>
+      <label for="outInside">JSON для вставки в <code>places.json</code> → <code>inside.points</code></label>
+      <textarea id="outInside" readonly></textarea>
     </div>
-    <button type="button" id="btnCopy">Копировать JSON</button>
+    <div class="field" style="margin-top:12px;">
+      <label for="outStreet">JSON для вставки в <code>places.json</code> → <code>street.points</code></label>
+      <textarea id="outStreet" readonly></textarea>
+    </div>
+    <button type="button" id="btnCopyInside">Копировать inside JSON</button>
+    <button type="button" id="btnCopyStreet">Копировать street JSON</button>
     <button type="button" id="btnClear">Очистить список</button>
   </div>
 
@@ -172,11 +184,14 @@
 
   var points = [];
   var nextId = 1;
+  var cfg = null;
 
+  var scopeSel = document.getElementById("scope");
   var floorSel = document.getElementById("floor");
   var floorImg = document.getElementById("floorImg");
   var mapBox = document.getElementById("mapBox");
   var imgErr = document.getElementById("imgErr");
+  var coordsLabel = document.getElementById("coordsLabel");
   var cx = document.getElementById("cx");
   var cy = document.getElementById("cy");
   var pid = document.getElementById("pid");
@@ -184,17 +199,64 @@
   var plabel = document.getElementById("plabel");
   var text = document.getElementById("text");
   var mcolor = document.getElementById("mcolor");
-  var out = document.getElementById("out");
+  var outInside = document.getElementById("outInside");
+  var outStreet = document.getElementById("outStreet");
   var listEl = document.getElementById("list");
 
+  function currentScope() {
+    return scopeSel.value === "street" ? "street" : "inside";
+  }
+
   function floorPath(f) {
+    if (
+      cfg &&
+      cfg.inside &&
+      cfg.inside.floorImages &&
+      cfg.inside.floorImages[String(f)]
+    ) {
+      return getAppBaseUrl() + String(cfg.inside.floorImages[String(f)]).replace(/^\/+/, "");
+    }
     return getAppBaseUrl() + "images/floor" + f + ".png";
+  }
+
+  function streetImagePath() {
+    if (cfg && cfg.street && cfg.street.imageOverlay && cfg.street.imageOverlay.url) {
+      return getAppBaseUrl() + String(cfg.street.imageOverlay.url).replace(/^\/+/, "");
+    }
+    return getAppBaseUrl() + "images/outside.jpg";
+  }
+
+  function streetBounds() {
+    if (
+      cfg &&
+      cfg.street &&
+      cfg.street.imageOverlay &&
+      cfg.street.imageOverlay.bounds &&
+      cfg.street.imageOverlay.bounds.length === 2
+    ) {
+      return cfg.street.imageOverlay.bounds;
+    }
+    return [
+      [55.7548, 37.6178],
+      [55.7568, 37.6215],
+    ];
+  }
+
+  function updateControlsByScope() {
+    var isStreet = currentScope() === "street";
+    floorSel.disabled = isStreet;
+    floorSel.parentElement.style.opacity = isStreet ? "0.55" : "1";
+    coordsLabel.textContent = isStreet
+      ? "Координаты (x/y улицы, клик по картинке)"
+      : "Координаты (x/y, клик по картинке)";
   }
 
   function loadFloorImage() {
     imgErr.hidden = true;
     imgErr.textContent = "";
+    var isStreet = currentScope() === "street";
     var f = floorSel.value;
+    var src = isStreet ? streetImagePath() : floorPath(f);
     floorImg.onload = function () {
       imgErr.hidden = true;
       redrawDots();
@@ -203,10 +265,10 @@
       imgErr.hidden = false;
       imgErr.textContent =
         "Не удалось загрузить " +
-        floorPath(f) +
+        src +
         ". Запустите страницу через локальный сервер (как index.html).";
     };
-    floorImg.src = floorPath(f) + "?v=" + Date.now();
+    floorImg.src = src + "?v=" + Date.now();
   }
 
   function imageCoordsFromEvent(e) {
@@ -247,8 +309,12 @@
       return;
     }
     var f = parseInt(floorSel.value, 10);
+    var scope = currentScope();
     points.forEach(function (p) {
-      if (p.floor !== f) {
+      if (p.scope !== scope) {
+        return;
+      }
+      if (scope === "inside" && p.floor !== f) {
         return;
       }
       var d = document.createElement("div");
@@ -278,8 +344,8 @@
         row.innerHTML =
           "<span><strong>" +
           (p.id || "?") +
-          "</strong> · этаж " +
-          p.floor +
+          "</strong> · " +
+          (p.scope === "street" ? "улица" : "этаж " + p.floor) +
           " · " +
           (p.title || "") +
           (p.label ? " [" + p.label + "]" : "") +
@@ -308,11 +374,16 @@
     var o = {
       id: p.id,
       title: p.title,
-      text: p.text,
-      floor: p.floor,
-      y: p.y,
-      x: p.x,
+      text: p.text
     };
+    if (p.scope === "street") {
+      o.x = p.x;
+      o.y = p.y;
+    } else {
+      o.floor = p.floor;
+      o.y = p.y;
+      o.x = p.x;
+    }
     if (p.marker && p.marker.color) {
       o.marker = { color: p.marker.color };
     }
@@ -323,30 +394,45 @@
   }
 
   function updateOut() {
-    out.value =
-      points.length === 0 ? "" : JSON.stringify(points.map(pointToJson), null, 2);
+    var inside = points.filter(function (p) { return p.scope === "inside"; });
+    var street = points.filter(function (p) { return p.scope === "street"; });
+    outInside.value = inside.length ? JSON.stringify(inside.map(pointToJson), null, 2) : "";
+    outStreet.value = street.length ? JSON.stringify(street.map(pointToJson), null, 2) : "";
   }
 
   document.getElementById("btnAdd").addEventListener("click", function () {
-    var x = parseInt(cx.value, 10);
-    var y = parseInt(cy.value, 10);
-    if (isNaN(x) || isNaN(y)) {
-      alert("Сначала кликните по плану этажа.");
-      return;
-    }
+    var scope = currentScope();
     var idVal = (pid.value || "").trim();
     if (!idVal) {
       idVal = suggestId();
       pid.value = idVal;
     }
     var p = {
+      scope: scope,
       id: idVal,
       title: (title.value || "").trim(),
-      text: (text.value || "").trim(),
-      floor: parseInt(floorSel.value, 10),
-      x: x,
-      y: y,
+      text: (text.value || "").trim()
     };
+    if (scope === "street") {
+      var sx = parseInt(cx.value, 10);
+      var sy = parseInt(cy.value, 10);
+      if (isNaN(sx) || isNaN(sy)) {
+        alert("Сначала кликните по уличной картинке.");
+        return;
+      }
+      p.x = sx;
+      p.y = sy;
+    } else {
+      var x = parseInt(cx.value, 10);
+      var y = parseInt(cy.value, 10);
+      if (isNaN(x) || isNaN(y)) {
+        alert("Сначала кликните по плану этажа.");
+        return;
+      }
+      p.floor = parseInt(floorSel.value, 10);
+      p.x = x;
+      p.y = y;
+    }
     var lab = (plabel.value || "").trim();
     if (lab) {
       p.label = lab;
@@ -366,8 +452,13 @@
     redrawDots();
   });
 
-  document.getElementById("btnCopy").addEventListener("click", function () {
-    out.select();
+  document.getElementById("btnCopyInside").addEventListener("click", function () {
+    outInside.select();
+    document.execCommand("copy");
+  });
+
+  document.getElementById("btnCopyStreet").addEventListener("click", function () {
+    outStreet.select();
     document.execCommand("copy");
   });
 
@@ -385,8 +476,25 @@
     redrawDots();
   });
 
-  loadFloorImage();
-  renderList();
+  scopeSel.addEventListener("change", function () {
+    updateControlsByScope();
+    loadFloorImage();
+    redrawDots();
+  });
+
+  fetch(getAppBaseUrl() + "places.json?v=" + Date.now(), { cache: "no-store" })
+    .then(function (res) { return res.ok ? res.json() : null; })
+    .then(function (json) {
+      if (json) {
+        cfg = json;
+      }
+    })
+    .catch(function () {})
+    .finally(function () {
+      updateControlsByScope();
+      loadFloorImage();
+      renderList();
+    });
 })();
   </script>
 </body>
