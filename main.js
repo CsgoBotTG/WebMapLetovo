@@ -57,8 +57,8 @@ function setModeButtons() {
 
 function setFloorButtons() {
   var i;
-  for (i = 1; i <= 4; i += 1) {
-    var btn = document.getElementById("btnFloor" + i);
+  for (i = 0; i < 4; i += 1) {
+    var btn = document.getElementById("btnFloor" + (i + 1));
     if (!btn) {
       continue;
     }
@@ -357,6 +357,15 @@ function showPlaceInfo(title, text) {
   textEl.textContent = text || "";
 }
 
+function formatPlaceTitle(title, label) {
+  var t = (title || "").trim();
+  var l = (label || "").trim();
+  if (t && l) {
+    return t + " (" + l + ")";
+  }
+  return t || l || "";
+}
+
 function initStreetMap(onReady, opts) {
   removeMap();
   opts = opts || {};
@@ -403,7 +412,7 @@ function initStreetMap(onReady, opts) {
         }
         p.__streetLatLng = ll;
         addPlaceMarker(map, ll, p, function () {
-          showPlaceInfo(p.title, p.text);
+          showPlaceInfo(formatPlaceTitle(p.title, p.label), p.text);
         });
       });
     }
@@ -546,7 +555,7 @@ function initIndoorMap(onReady) {
       var x = typeof p.x === "number" ? p.x : 500;
       var ll = indoorLatLngFromPixel(y, x, heightPx);
       addPlaceMarker(map, ll, p, function () {
-        showPlaceInfo(p.title, p.text);
+        showPlaceInfo(formatPlaceTitle(p.title, p.label), p.text);
       });
     });
   }
@@ -751,7 +760,13 @@ function renderSearchResults(query) {
     var btn = document.createElement("button");
     btn.type = "button";
     btn.className = "search-result-btn";
-    btn.textContent = it.title || it.label || "";
+    var t = (it.title || "").trim();
+    var l = (it.label || "").trim();
+    if (t && l) {
+      btn.textContent = t + " (" + l + ")";
+    } else {
+      btn.textContent = t || l || "";
+    }
     var meta = document.createElement("span");
     meta.className = "search-result-meta";
     meta.textContent =
@@ -781,7 +796,7 @@ function panToInsideItem(item) {
       ? data.inside.center.zoom
       : 0;
   map.setView(ll, Math.max(map.getZoom(), baseZoom, 0.5), { animate: false });
-  showPlaceInfo(item.title, item.text || "");
+  showPlaceInfo(formatPlaceTitle(item.title, item.label), item.text || "");
 }
 
 function panToStreetItem(item) {
@@ -820,7 +835,7 @@ function panToStreetItem(item) {
   // Для перехода по поиску на улице всегда делаем заметное приближение.
   var targetZoom = 18.5;
   map.setView(ll, targetZoom, { animate: false });
-  showPlaceInfo(item.title, item.text || "");
+  showPlaceInfo(formatPlaceTitle(item.title, item.label), item.text || "");
   return true;
 }
 
@@ -857,7 +872,7 @@ function focusSearchItem(item) {
     return;
   }
 
-  var targetFloor = typeof item.floor === "number" ? item.floor : 1;
+  var targetFloor = typeof item.floor === "number" ? item.floor : 0;
   if (mode === "inside" && currentFloor === targetFloor && map) {
     panToInsideItem(item);
     return;
@@ -1006,7 +1021,7 @@ floorButtons.forEach(function (btn, idx) {
     return;
   }
   btn.addEventListener("click", function () {
-    var nextFloor = idx + 1;
+    var nextFloor = idx;
     if (currentFloor === nextFloor && mode === "inside") {
       return;
     }

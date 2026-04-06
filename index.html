@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@700;800&display=swap" rel="stylesheet">
   <!-- Без integrity: иначе при расхождении хеша с CDN браузер блокирует Leaflet (карта пустая) -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=20260331-11">
+  <link rel="stylesheet" href="style.css?v=20260331-13">
 </head>
 <body>
   <section id="app" class="screen">
@@ -23,10 +23,10 @@
       </div>
 
       <div class="floor-controls" id="floorControls" role="toolbar" aria-label="Выбор этажа" hidden>
-        <button type="button" class="control-btn floor-btn is-active" id="btnFloor1" aria-pressed="true" title="Этаж 1">1</button>
-        <button type="button" class="control-btn floor-btn" id="btnFloor2" aria-pressed="false" title="Этаж 2">2</button>
-        <button type="button" class="control-btn floor-btn" id="btnFloor3" aria-pressed="false" title="Этаж 3">3</button>
-        <button type="button" class="control-btn floor-btn" id="btnFloor4" aria-pressed="false" title="Этаж 4">4</button>
+        <button type="button" class="control-btn floor-btn is-active" id="btnFloor1" aria-pressed="true" title="Этаж 0">0</button>
+        <button type="button" class="control-btn floor-btn" id="btnFloor2" aria-pressed="false" title="Этаж 1">1</button>
+        <button type="button" class="control-btn floor-btn" id="btnFloor3" aria-pressed="false" title="Этаж 2">2</button>
+        <button type="button" class="control-btn floor-btn" id="btnFloor4" aria-pressed="false" title="Этаж 3">3</button>
       </div>
 
       <div class="map-controls" role="toolbar" aria-label="Переключение режима карты">
@@ -47,6 +47,6 @@
   </section>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="main.js?v=20260331-30"></script>
+  <script src="main.js?v=20260331-33"></script>
 </body>
 </html>
